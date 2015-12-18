@@ -8,6 +8,17 @@
 <link rel="icon" href="{{ url_for('static', filename='images/favicon.ico') }}" type="image/x-icon" />
 {% endblock %}
 
+{% block styles %}
+<link href="{{ url_for('static', filename='css/bootstrap-3.3.5.min.css') }}" rel="stylesheet">
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/jquery-1.11.3.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bootstrap-3.3.5.min.js') }}"></script>
+{% endblock %}
+    
+
+
 {% block navbar %}
 <div class="navbar navbar-inverse" role="navigation">
     <div class="container">
