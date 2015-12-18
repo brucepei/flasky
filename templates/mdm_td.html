@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}{{ super() }} - MDM{% endblock %}
+
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        {% for field in form %}
+            <h2>{{ field.name }}={{ field.data }}</h2>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}7
