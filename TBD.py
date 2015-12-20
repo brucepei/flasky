@@ -4,7 +4,7 @@ import logging
 import logging.config
 import argparse
 import os
-from flask import Flask, request, render_template
+from flask import Flask, request, jsonify, render_template
 from flask.ext.bootstrap import Bootstrap
 from flask.ext.script import Manager
 from flask.ext.wtf import Form
@@ -54,7 +54,7 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 't_span123'
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'db', 'mdm_tbd.sqlite')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'db', 'test_tbd.sqlite')
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
 
@@ -80,6 +80,25 @@ def config_log(opts):
     LOGGING['handlers']['console']['level'] = loglevel #Console log can be adjusted by command line
     logging.config.dictConfig(LOGGING)
     
+def str2bool(val):
+    r = None
+    if len(val):
+        val_lower = val.lower()
+        if val_lower == 'fail' or val_lower == 'nok' or val_lower == '0':
+            r = False
+        else:
+            r = True
+    return r
+    
+def str2int(val):
+    r = 0
+    if len(val):
+        try:
+            r = int(val)
+        except Exception:
+            print "Failed to transfer {} to integer!".format(val)
+    return r
+
 class TD(db.Model):
     __tablename__ = 'td'
 
@@ -124,50 +143,123 @@ class Build(db.Model):
     __tablename__ = 'builds'
     id = db.Column(db.Integer, primary_key=True)
     version = db.Column(db.TEXT, unique=True)
+    name = db.Column(db.String(64), nullable=False)
+    meta_path = db.Column(db.TEXT, nullable=False)
+    crash_path = db.Column(db.TEXT, nullable=False)
+    is_crm = db.Column(db.Boolean, nullable=True)
     td = db.relationship(TD, backref='build')
     
     def __repr__(self):
         return '<Build {}>'.format(self.version)
-        
 
-        
+    
+class TestDataForm(Form):
+    project_name = StringField('Project name?', validators=[Required()])
+    host_name = StringField('Host name?', validators=[Required()])
+    ip_addr = StringField('IP address?', validators=[Required()])
+    tc_name = StringField('Test case name?', validators=[Required()])
+    test_client = StringField('Test client name and version?', validators=[Required()])
+    build_verion = StringField('Build version?', validators=[Required()])
+    is_crash = StringField('Is Crash?', validators=[])
+    tc_result = StringField('Test case result, pass or fail or None?', validators=[])
+    ta_name = StringField('Test action name?', validators=[])
+    ta_result = StringField('Test action result, pass or fail or None?', validators=[])
+    
+    submit = SubmitField("Submit") 
+
+class BuildForm(Form):
+    version = StringField('Build version?', validators=[Required()])
+    name = StringField('Build short name?', validators=[Required()])
+    meta_path = StringField('Meta path?', validators=[Required()])
+    crash_path = StringField('Crash path?', validators=[Required()])
+    is_crm = StringField('Is CRM build?', validators=[])
+    submit = SubmitField("Submit")
+    
+
 @app.route('/')
 def index():
-    return render_template('base.html', name = 'lpei')
-    
-@app.route('/mdm')
-def mdm():
+    project = Project.query.order_by(Project.name).all()
+    return render_template('base.html', project=project)
+
+@app.route('/build/list', methods=['GET', 'POST'])
+def build_list():
+    project = Project.query.order_by(Project.name).all()
+    project_name = request.args.get('project_name', None)
+    if project_name:
+        builds = Build.query.join(Build.td).join(TD.project).filter(Project.name==project_name).all()
+    else:
+        builds = Build.query.all()
+    return render_template('build_list.html', project=project, project_name=project_name, builds=builds)
+
+@app.route('/project/tbd', methods=['GET'])
+def project_tbd():
+    project = Project.query.order_by(Project.name).all()
+    project_name = request.args.get('project_name', None)
+    build_version = request.args.get('build_version', None)
+    log.debug("Query TBD for project {} and build {}!".format(project_name, build_version))
+    if build_version:
+        tbd = TD.query.join(TD.host).join(TD.project).join(TD.build).filter(Project.name==project_name, Build.version==build_version).order_by(Host.ip_addr).all()
+    else:
+        tbd = TD.query.join(TD.host).join(TD.project).filter(Project.name==project_name).order_by(Host.ip_addr).all()
+    return render_template('project_tbd.html', project=project, project_name=project_name, tbd=tbd)
+
+@app.route('/manual/build')
+def manual_build():
+    project = Project.query.order_by(Project.name).all()
+    project_name = request.args.get('project_name', None)
+    form = BuildForm()
+    for k in form.__dict__:
+        k_o = getattr(form, k)
+        log.debug("form key {}: {}".format(k, callable(k_o)))
+    return render_template('manual_build.html', project=project, form=form, project_name=project_name)
+
+@app.route('/manual/test')
+def manual_test():
+    project = Project.query.order_by(Project.name).all()
+    project_name = request.args.get('project_name', None)
     form = TestDataForm()
     for k in form.__dict__:
         k_o = getattr(form, k)
         log.debug("form key {}: {}".format(k, callable(k_o)))
-    return render_template('mdm.html', form = form, getattr = getattr, callable = callable)
+    return render_template('manual_test.html', project=project, project_name=project_name, form=form)
 
-def str2bool(val):
-    r = None
-    if len(val):
-        if val.upper() == 'PASS':
-            r = True
+@app.route('/project/build', methods=['POST'])
+def project_build():
+    form = BuildForm()
+    for field in form:
+        log.debug("Get build field {}={}!".format(field.name, field.data))
+    if form.validate_on_submit():
+        log.debug("Get validate build table!")
+        version = form.version.data
+        name = form.name.data
+        meta_path = form.meta_path.data
+        crash_path = form.crash_path.data
+        is_crm = str2bool(form.is_crm.data)
+        
+        build = Build.query.filter_by(version=version).first()
+        if build:
+            build.name = name
+            build.meta_path = meta_path
+            build.crash_path = crash_path
+            build.is_crm = is_crm
         else:
-            r = False
-    return r
-    
-def str2int(val):
-    r = 0
-    if len(val):
-        try:
-            r = int(val)
-        except Exception:
-            print "Failed to transfer {} to integer!".format(val)
-    return r
-    
-@app.route('/mdm/td', methods=['GET', 'POST'])
-def mdm_td():
+            build = Build(version=version, name=name, meta_path=meta_path,
+                          crash_path=crash_path, is_crm=is_crm)
+        db.session.add(build)
+            
+        db.session.commit()
+    else:
+        log.debug("No validate build table!")
+        return jsonify(code=-1, msg="no validate build table"), 400
+    return jsonify(code=0, msg="ok")
+
+@app.route('/project/td', methods=['POST'])
+def project_td():
     form = TestDataForm(csrf_enabled=False)
     for field in form:
-        log.debug("Get field {}={}!".format(field.name, field.data))
+        log.debug("Get test data field {}={}!".format(field.name, field.data))
     if form.validate_on_submit():
-        log.debug("Get validate table!")
+        log.debug("Get validate test data table!")
         project_name = form.project_name.data
         host_name = form.host_name.data
         ip_addr = form.ip_addr.data
@@ -210,29 +302,12 @@ def mdm_td():
             
         db.session.commit()
     else:
-        log.debug("No validate table!")
-        return render_template('mdm_td.html', form = form), 400
-    return render_template('mdm_td.html', form = form)
+        log.debug("No validate test data table!")
+        return jsonify(code=-1, msg="no validate test data table"), 400
+    return jsonify(code=0, msg="ok")
 
-@app.route('/mdm/tbd', methods=['GET'])
-def mdm_tbd():
-    tbd = TD.query.all()
-    return render_template('mdm_tbd.html', tbd = tbd)
 
-class TestDataForm(Form):
-    project_name = StringField('Project name?', validators=[Required()])
-    host_name = StringField('Host name?', validators=[Required()])
-    ip_addr = StringField('IP address?', validators=[Required()])
-    tc_name = StringField('Test case name?', validators=[Required()])
-    test_client = StringField('Test client name and version?', validators=[Required()])
-    build_verion = StringField('Build version?', validators=[Required()])
-    is_crash = StringField('Is Crash?', validators=[])
-    tc_result = StringField('Test case result, pass or fail or None?', validators=[])
-    ta_name = StringField('Test action name?', validators=[])
-    ta_result = StringField('Test action result, pass or fail or None?', validators=[])
-    
-    submit = SubmitField("Submit") 
-    
+
 if __name__ == '__main__':
     # opts = args_option()
     # log.debug("Start app at port {}!".format(opts.port))

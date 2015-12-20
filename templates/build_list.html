@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Build List - {{ project_name }}{% endblock %}
+
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <table class="table">
+            <thead>
+                <th>Version</th>
+                <th>Name</th>
+                <th>META Path</th>
+                <th>Crash Path</th>
+                <th>Is CRM</th>
+            </thead>
+            <tbody>
+                {% for build in builds %}
+                <tr>
+                    <td><a href="{{ url_for('project_tbd') }}?project_name={{ project_name }}&build_version={{ build.version }}">{{ build.version }}</a></td>
+                    <td>{{ build.name }}</td>
+                    <td><a href="{{ build.meta_path }}">{{ build.meta_path }}</a></td>
+                    <td><a href="{{ build.crash_path }}">{{ build.crash_path }}</a></td>
+                    <td>{{ build.is_crm }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}7

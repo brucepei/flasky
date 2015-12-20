@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ super() }} - MDM{% endblock %}
+{% block title %}{{ super() }} - {{ project_name }}{% endblock %}
 
 
 {% block content %}
@@ -17,7 +17,7 @@
             <tbody>
                 {% for td in tbd %}
                 <tr>
-                    <td>{{ td.build.version }}</td>
+                    <td>{{ td.build.name }}</td>
                     <td>{{ td.host.ip_addr }}({{ td.host.name }})</td>
                     <td>{{ td.tc_name }}</td>
                     <td>{{ td.test_client }}</td>

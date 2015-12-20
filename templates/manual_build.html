@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% import "bootstrap/wtf.html" as wtf %}
 
-{% block title %}{{ super() }} - MDM{% endblock %}
+{% block title %}Manual Build - {{ project_name }}{% endblock %}
 
 
 {% block content %}
 <div class="container">
     <div class="page-header">
-        {{ wtf.quick_form(form, action=url_for('mdm_td')) }}
+        {{ wtf.quick_form(form, action=url_for('project_build')) }}
     </div>
 </div>
 {% endblock %}7
