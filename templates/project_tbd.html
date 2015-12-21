@@ -13,15 +13,17 @@
                 <th>Test Case</th>
                 <th>Test Client</th>
                 <th>Crash Number</th>
+                <th>Updated</th
             </thead>
             <tbody>
                 {% for td in tbd %}
                 <tr>
-                    <td>{{ td.build.name }}</td>
+                    <td>{{ td.build.version }}</td>
                     <td>{{ td.host.ip_addr }}({{ td.host.name }})</td>
                     <td>{{ td.tc_name }}</td>
                     <td>{{ td.test_client }}</td>
                     <td>{{ td.crash_num }}</td>
+                    <td>{{ td.update_time.strftime('%Y-%m-%d %H:%M:%S') if td.update_time else None }}</td>
                 </tr>
                 {% endfor %}
             </tbody>

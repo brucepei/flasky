@@ -4,11 +4,13 @@ import logging
 import logging.config
 import argparse
 import os
+from datetime import datetime
 from flask import Flask, request, jsonify, render_template
 from flask.ext.bootstrap import Bootstrap
 from flask.ext.script import Manager
 from flask.ext.wtf import Form
 from flask.ext.sqlalchemy import SQLAlchemy
+from flask.ext.migrate import Migrate, MigrateCommand
 from wtforms import StringField, SubmitField
 from wtforms.validators import Required
 
@@ -63,6 +65,8 @@ log.debug("Initialize Flask App instance {}!".format(app))
 db = SQLAlchemy(app)
 bootstrap = Bootstrap(app)
 manager = Manager(app)
+migrate = Migrate(app, db)
+manager.add_command('db', MigrateCommand)
 
 def config_log(opts):
     loglevel = getattr(logging, opts.get('level').upper(), None)
@@ -116,6 +120,7 @@ class TD(db.Model):
     ta_name = db.Column(db.String(64), nullable=True)
     tc_result = db.Column(db.Boolean, nullable=True)
     ta_result = db.Column(db.Boolean, nullable=True)
+    update_time = db.Column(db.DateTime, nullable=True)
     
     def __repr__(self):
         return '<TD {}>'.format(self.host_name)
@@ -186,10 +191,16 @@ def build_list():
     project = Project.query.order_by(Project.name).all()
     project_name = request.args.get('project_name', None)
     if project_name:
-        builds = Build.query.join(Build.td).join(TD.project).filter(Project.name==project_name).all()
+        builds = Build.query.join(Build.td).join(TD.project).filter(Project.name==project_name).order_by(db.desc(Build.version)).all()
     else:
-        builds = Build.query.all()
-    return render_template('build_list.html', project=project, project_name=project_name, builds=builds)
+        builds = Build.query.order_by(db.desc(Build.version)).all()
+    if request.method == 'POST':
+        build_list = []
+        for build in builds:
+            build_list.append({'version': build.version, 'name': build.name, 'meta_path': build.meta_path, 'crash_path': build.crash_path, 'is_crm': build.is_crm})
+        return jsonify(code=0, result=build_list)
+    else:
+        return render_template('build_list.html', project=project, project_name=project_name, builds=builds)
 
 @app.route('/project/tbd', methods=['GET'])
 def project_tbd():
@@ -250,8 +261,8 @@ def project_build():
         db.session.commit()
     else:
         log.debug("No validate build table!")
-        return jsonify(code=-1, msg="no validate build table"), 400
-    return jsonify(code=0, msg="ok")
+        return jsonify(code=-1, result="no validate build table"), 400
+    return jsonify(code=0, result="ok")
 
 @app.route('/project/td', methods=['POST'])
 def project_td():
@@ -270,7 +281,12 @@ def project_td():
         tc_result = str2bool(form.tc_result.data)
         ta_result = str2bool(form.ta_result.data)
         crash_num = str2int(form.is_crash.data)
-
+        
+        build = Build.query.filter_by(version=build_version).first()
+        if not build:
+            log.debug("Not exists build {}!".format(build_version))
+            return jsonify(code=-1, result="Not exists build {}!".format(build_version)), 400
+            
         project = Project.query.filter_by(name=project_name).first()
         if not project:
             project = Project(name=project_name)
@@ -282,12 +298,7 @@ def project_td():
         else:
             host = Host(name=host_name, ip_addr=ip_addr)
         db.session.add(host)
-            
-        build = Build.query.filter_by(version=build_version).first()
-        if not build:
-            build = Build(version=build_version)
-            db.session.add(build)
-        
+
         td = TD.query.filter_by(tc_name=tc_name).filter_by(build=build).filter_by(host=host).first()
         if td:
             td.crash_num += crash_num
@@ -298,13 +309,14 @@ def project_td():
         else:
             td = TD(project=project, host=host, build=build, tc_name=tc_name, crash_num=crash_num,
                     test_client=test_client, ta_name=ta_name, tc_result=tc_result, ta_result=ta_result)
+        td.update_time = datetime.now()
         db.session.add(td)
             
         db.session.commit()
     else:
         log.debug("No validate test data table!")
-        return jsonify(code=-1, msg="no validate test data table"), 400
-    return jsonify(code=0, msg="ok")
+        return jsonify(code=-1, result="no validate test data table"), 400
+    return jsonify(code=0, result="ok")
 
 
 
