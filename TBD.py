@@ -170,8 +170,9 @@ class TestDataForm(Form):
     ta_name = StringField('Test action name?', validators=[])
     ta_result = StringField('Test action result, pass or fail or None?', validators=[])
     
-    submit = SubmitField("Submit") 
-
+    submit = SubmitField("Submit")
+    delete = SubmitField("Delete")
+    
 class BuildForm(Form):
     version = StringField('Build version?', validators=[Required()])
     name = StringField('Build short name?', validators=[Required()])
@@ -179,7 +180,7 @@ class BuildForm(Form):
     crash_path = StringField('Crash path?', validators=[Required()])
     is_crm = StringField('Is CRM build?', validators=[])
     submit = SubmitField("Submit")
-    
+    delete = SubmitField("Delete")
 
 @app.route('/')
 def index():
@@ -247,6 +248,23 @@ def project_build():
         crash_path = form.crash_path.data
         is_crm = str2bool(form.is_crm.data)
         
+        is_delete = form.delete.data
+
+        if is_delete:
+            build = Build.query.filter_by(version=version).first()
+            if build:
+                build_tds = TD.query.filter_by(build=build).all()
+                if build_tds:
+                    log.debug("build {} are used by td, so cannot delete!".format(version))
+                    return jsonify(code=-1, result="build {} are used by td, so cannot delete!".format(version)), 400
+                else:
+                    db.session.delete(build)
+                    db.session.commit()
+                    return jsonify(code=0, result="delete ok")
+            else:
+                log.debug("No matched build {}, cannot delete!".format(version))
+                return jsonify(code=-1, result="No matched build {}, cannot delete!".format(version)), 400
+            
         build = Build.query.filter_by(version=version).first()
         if build:
             build.name = name
@@ -282,13 +300,18 @@ def project_td():
         ta_result = str2bool(form.ta_result.data)
         crash_num = str2int(form.is_crash.data)
         
+        is_delete = form.delete.data
+
         build = Build.query.filter_by(version=build_version).first()
         if not build:
             log.debug("Not exists build {}!".format(build_version))
             return jsonify(code=-1, result="Not exists build {}!".format(build_version)), 400
-            
+        
         project = Project.query.filter_by(name=project_name).first()
         if not project:
+            if is_delete:
+                log.debug("Not exists project {} when delete {}!".format(project_name, build_version))
+                return jsonify(code=-1, result="Not exists project {} when delete {}!".format(project_name, build_version)), 400
             project = Project(name=project_name)
             db.session.add(project)
             
@@ -296,9 +319,32 @@ def project_td():
         if host:
             host.ip_addr = ip_addr
         else:
+            if is_delete:
+                log.debug("Not exists host {} when delete {}!".format(host_name, build_version))
+                return jsonify(code=-1, result="Not exists host {} when delete {}!".format(host_name, build_version)), 400
             host = Host(name=host_name, ip_addr=ip_addr)
         db.session.add(host)
 
+        if is_delete:
+            td = TD.query.filter_by(tc_name=tc_name).filter_by(build=build).filter_by(host=host).first()
+            if td:
+                build_tds = TD.query.filter_by(build=build).all()
+                project_tds = TD.query.join(TD.project).filter(Project.name==project_name).all()
+                host_tds = TD.query.filter_by(host=host).all()
+                if build_tds and len(build_tds) == 1:
+                    log.debug("Only 1 build left, so also delete build {}!".format(build_version))
+                    db.session.delete(build)
+                if project_tds and len(project_tds) == 1:
+                    log.debug("Only 1 project left, so also delete project {}!".format(project_name))
+                    db.session.delete(project)
+                if host_tds and len(host_tds) == 1:
+                    log.debug("Only 1 host left, so also delete host {}!".format(host_name))
+                    db.session.delete(host)
+                db.session.delete(td)
+                db.session.commit()
+                return jsonify(code=0, result="delete ok")
+            return jsonify(code=-1, result="not exists record, cannot delete!"), 400
+            
         td = TD.query.filter_by(tc_name=tc_name).filter_by(build=build).filter_by(host=host).first()
         if td:
             td.crash_num += crash_num
