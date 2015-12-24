@@ -11,7 +11,7 @@ from flask.ext.script import Manager
 from flask.ext.wtf import Form
 from flask.ext.sqlalchemy import SQLAlchemy
 from flask.ext.migrate import Migrate, MigrateCommand
-from wtforms import StringField, SubmitField
+from wtforms import HiddenField, StringField, SubmitField
 from wtforms.validators import Required
 
 VERSION='0.2.1'
@@ -56,7 +56,7 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 't_span123'
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'db', 'test_tbd.sqlite')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'db', 'tdb.sqlite')
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
 
@@ -107,7 +107,6 @@ class TD(db.Model):
     __tablename__ = 'td'
 
     id = db.Column(db.Integer, primary_key=True)
-    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'))
     host_id = db.Column(db.Integer, db.ForeignKey('hosts.id'))
     build_id = db.Column(db.Integer, db.ForeignKey('builds.id'))
     tc_name = db.Column(db.String(64), nullable=False)
@@ -129,7 +128,7 @@ class Project(db.Model):
     __tablename__ = 'projects'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(64), unique=True)
-    td = db.relationship(TD, backref='project')
+    build = db.relationship('Build', backref='project')
     
     def __repr__(self):
         return '<Project {}>'.format(self.name)
@@ -147,6 +146,7 @@ class Host(db.Model):
 class Build(db.Model):
     __tablename__ = 'builds'
     id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'))
     version = db.Column(db.TEXT, unique=True)
     name = db.Column(db.String(64), nullable=False)
     meta_path = db.Column(db.TEXT, nullable=False)
@@ -159,7 +159,6 @@ class Build(db.Model):
 
     
 class TestDataForm(Form):
-    project_name = StringField('Project name?', validators=[Required()])
     host_name = StringField('Host name?', validators=[Required()])
     ip_addr = StringField('IP address?', validators=[Required()])
     tc_name = StringField('Test case name?', validators=[Required()])
@@ -174,6 +173,7 @@ class TestDataForm(Form):
     delete = SubmitField("Delete")
     
 class BuildForm(Form):
+    project_name = HiddenField('Project name?', validators=[Required()])
     version = StringField('Build version?', validators=[Required()])
     name = StringField('Build short name?', validators=[Required()])
     meta_path = StringField('Meta path?', validators=[Required()])
@@ -182,6 +182,11 @@ class BuildForm(Form):
     submit = SubmitField("Submit")
     delete = SubmitField("Delete")
 
+class ProjectForm(Form):
+    name = StringField('Project name?', validators=[Required()])
+    submit = SubmitField("Submit")
+    delete = SubmitField("Delete")
+    
 @app.route('/')
 def index():
     project = Project.query.order_by(Project.name).all()
@@ -192,7 +197,7 @@ def build_list():
     project = Project.query.order_by(Project.name).all()
     project_name = request.args.get('project_name', None)
     if project_name:
-        builds = Build.query.join(Build.td).join(TD.project).filter(Project.name==project_name).order_by(db.desc(Build.version)).all()
+        builds = Build.query.join(Build.project).filter(Project.name==project_name).order_by(db.desc(Build.version)).all()
     else:
         builds = Build.query.order_by(db.desc(Build.version)).all()
     if request.method == 'POST':
@@ -210,16 +215,18 @@ def project_tbd():
     build_version = request.args.get('build_version', None)
     log.debug("Query TBD for project {} and build {}!".format(project_name, build_version))
     if build_version:
-        tbd = TD.query.join(TD.host).join(TD.project).join(TD.build).filter(Project.name==project_name, Build.version==build_version).order_by(Host.ip_addr).all()
+        tbd = TD.query.join(TD.host).join(TD.build).join(Build.project).filter(Build.version==build_version).order_by(Host.ip_addr).all()
+    elif project_name:
+        tbd = TD.query.join(TD.host).join(TD.build).join(Build.project).filter(Project.name==project_name).order_by(Host.ip_addr).all()
     else:
-        tbd = TD.query.join(TD.host).join(TD.project).filter(Project.name==project_name).order_by(Host.ip_addr).all()
+        tbd = TD.query.join(TD.host).join(TD.build).join(Build.project).order_by(Host.ip_addr).all()
     return render_template('project_tbd.html', project=project, project_name=project_name, tbd=tbd)
 
 @app.route('/manual/build')
 def manual_build():
     project = Project.query.order_by(Project.name).all()
     project_name = request.args.get('project_name', None)
-    form = BuildForm()
+    form = BuildForm(project_name=project_name)
     for k in form.__dict__:
         k_o = getattr(form, k)
         log.debug("form key {}: {}".format(k, callable(k_o)))
@@ -229,11 +236,58 @@ def manual_build():
 def manual_test():
     project = Project.query.order_by(Project.name).all()
     project_name = request.args.get('project_name', None)
-    form = TestDataForm()
+    form = TestDataForm(project_name=project_name)
     for k in form.__dict__:
         k_o = getattr(form, k)
         log.debug("form key {}: {}".format(k, callable(k_o)))
     return render_template('manual_test.html', project=project, project_name=project_name, form=form)
+    
+@app.route('/manual/project')
+def manual_project():
+    project = Project.query.order_by(Project.name).all()
+    form = ProjectForm()
+    for k in form.__dict__:
+        k_o = getattr(form, k)
+        log.debug("form key {}: {}".format(k, callable(k_o)))
+    return render_template('manual_project.html', project=project, form=form)
+
+@app.route('/project/new', methods=['POST'])
+def project_new():
+    form = ProjectForm()
+    for field in form:
+        log.debug("Get project field {}={}!".format(field.name, field.data))
+    if form.validate_on_submit():
+        log.debug("Get validate build table!")
+        name = form.name.data
+        is_delete = form.delete.data
+
+        if is_delete:
+            project = Project.query.filter_by(name=name).first()
+            if project:
+                project_builds = Build.query.filter_by(project=project).all()
+                if project_builds:
+                    log.debug("Project {} are used by build, so cannot delete!".format(name))
+                    return jsonify(code=-1, result="Project {} are used by build, so cannot delete!".format(name)), 400
+                else:
+                    db.session.delete(project)
+                    db.session.commit()
+                    return jsonify(code=0, result="delete ok")
+            else:
+                log.debug("No matched project {}, cannot delete!".format(name))
+                return jsonify(code=-1, result="No matched project {}, cannot delete!".format(name)), 400
+            
+            
+        project = Project.query.filter_by(name=name).first()
+        if project:
+            return jsonify(code=0, result="already exists!")
+        else:
+            project = Project(name=name)
+            db.session.add(project)
+            db.session.commit()
+    else:
+        log.debug("No validate build table!")
+        return jsonify(code=-1, result="no validate build table"), 400
+    return jsonify(code=0, result="ok")
 
 @app.route('/project/build', methods=['POST'])
 def project_build():
@@ -244,6 +298,7 @@ def project_build():
         log.debug("Get validate build table!")
         version = form.version.data
         name = form.name.data
+        project_name = form.project_name.data
         meta_path = form.meta_path.data
         crash_path = form.crash_path.data
         is_crm = str2bool(form.is_crm.data)
@@ -265,15 +320,24 @@ def project_build():
                 log.debug("No matched build {}, cannot delete!".format(version))
                 return jsonify(code=-1, result="No matched build {}, cannot delete!".format(version)), 400
             
+        project = Project.query.filter_by(name=project_name).first()
+        if not project:
+            if is_delete:
+                log.debug("Not exists project {} when delete {}!".format(project_name, build_version))
+                return jsonify(code=-1, result="Not exists project {} when delete {}!".format(project_name, build_version)), 400
+            project = Project(name=project_name)
+            db.session.add(project)
+            
         build = Build.query.filter_by(version=version).first()
         if build:
             build.name = name
+            build.project = project
             build.meta_path = meta_path
             build.crash_path = crash_path
             build.is_crm = is_crm
         else:
-            build = Build(version=version, name=name, meta_path=meta_path,
-                          crash_path=crash_path, is_crm=is_crm)
+            build = Build(version=version, project=project, name=name, 
+                            meta_path=meta_path, crash_path=crash_path, is_crm=is_crm)
         db.session.add(build)
             
         db.session.commit()
@@ -289,7 +353,6 @@ def project_td():
         log.debug("Get test data field {}={}!".format(field.name, field.data))
     if form.validate_on_submit():
         log.debug("Get validate test data table!")
-        project_name = form.project_name.data
         host_name = form.host_name.data
         ip_addr = form.ip_addr.data
         build_version = form.build_verion.data
@@ -306,14 +369,6 @@ def project_td():
         if not build:
             log.debug("Not exists build {}!".format(build_version))
             return jsonify(code=-1, result="Not exists build {}!".format(build_version)), 400
-        
-        project = Project.query.filter_by(name=project_name).first()
-        if not project:
-            if is_delete:
-                log.debug("Not exists project {} when delete {}!".format(project_name, build_version))
-                return jsonify(code=-1, result="Not exists project {} when delete {}!".format(project_name, build_version)), 400
-            project = Project(name=project_name)
-            db.session.add(project)
             
         host = Host.query.filter_by(name=host_name).first()
         if host:
@@ -328,15 +383,7 @@ def project_td():
         if is_delete:
             td = TD.query.filter_by(tc_name=tc_name).filter_by(build=build).filter_by(host=host).first()
             if td:
-                build_tds = TD.query.filter_by(build=build).all()
-                project_tds = TD.query.join(TD.project).filter(Project.name==project_name).all()
                 host_tds = TD.query.filter_by(host=host).all()
-                if build_tds and len(build_tds) == 1:
-                    log.debug("Only 1 build left, so also delete build {}!".format(build_version))
-                    db.session.delete(build)
-                if project_tds and len(project_tds) == 1:
-                    log.debug("Only 1 project left, so also delete project {}!".format(project_name))
-                    db.session.delete(project)
                 if host_tds and len(host_tds) == 1:
                     log.debug("Only 1 host left, so also delete host {}!".format(host_name))
                     db.session.delete(host)
@@ -353,7 +400,7 @@ def project_td():
             td.tc_result=tc_result
             td.ta_result=ta_result
         else:
-            td = TD(project=project, host=host, build=build, tc_name=tc_name, crash_num=crash_num,
+            td = TD(host=host, build=build, tc_name=tc_name, crash_num=crash_num,
                     test_client=test_client, ta_name=ta_name, tc_result=tc_result, ta_result=ta_result)
         td.update_time = datetime.now()
         db.session.add(td)
@@ -372,8 +419,3 @@ if __name__ == '__main__':
     config_log({'level': 'debug'})
     db.create_all()
     manager.run()
-
-
-    
-    
-
