@@ -1,0 +1,10 @@
+<uwsgi>
+	<chdir>/var/www/flasky</chdir>
+	<home>/var/www/flasky/venv</home>
+	<module>TBD</module>
+	<callable>app</callable>
+	<socket>127.0.0.1:5000</socket>
+	<master/>
+	<process>4</process>
+	<memory-report/>
+</uwsgi>
