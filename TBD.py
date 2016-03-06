@@ -88,7 +88,7 @@ def str2bool(val):
     r = None
     if len(val):
         val_lower = val.lower()
-        if val_lower == 'fail' or val_lower == 'nok' or val_lower == '0':
+        if val_lower == 'fail' or val_lower == 'no' or val_lower == 'nok' or val_lower == '0':
             r = False
         else:
             r = True
@@ -150,6 +150,7 @@ class Build(db.Model):
     version = db.Column(db.TEXT, unique=True)
     name = db.Column(db.String(64), nullable=False)
     meta_path = db.Column(db.TEXT, nullable=False)
+    local_path = db.Column(db.TEXT, nullable=True)
     crash_path = db.Column(db.TEXT, nullable=False)
     is_crm = db.Column(db.Boolean, nullable=True)
     td = db.relationship(TD, backref='build')
@@ -177,6 +178,7 @@ class BuildForm(Form):
     version = StringField('Build version?', validators=[Required()])
     name = StringField('Build short name?', validators=[Required()])
     meta_path = StringField('Meta path?', validators=[Required()])
+    local_path = StringField('Local build path?', validators=[])
     crash_path = StringField('Crash path?', validators=[Required()])
     is_crm = StringField('Is CRM build?', validators=[])
     submit = SubmitField("Submit")
@@ -203,7 +205,7 @@ def build_list():
     if request.method == 'POST':
         build_list = []
         for build in builds:
-            build_list.append({'version': build.version, 'name': build.name, 'meta_path': build.meta_path, 'crash_path': build.crash_path, 'is_crm': build.is_crm})
+            build_list.append({'version': build.version, 'name': build.name, 'meta_path': build.meta_path, 'local_path': build.local_path, 'crash_path': build.crash_path, 'is_crm': build.is_crm})
         return jsonify(code=0, result=build_list)
     else:
         return render_template('build_list.html', project=project, project_name=project_name, builds=builds)
@@ -300,6 +302,7 @@ def project_build():
         name = form.name.data
         project_name = form.project_name.data
         meta_path = form.meta_path.data
+        local_path = form.local_path.data
         crash_path = form.crash_path.data
         is_crm = str2bool(form.is_crm.data)
         
@@ -333,11 +336,12 @@ def project_build():
             build.name = name
             build.project = project
             build.meta_path = meta_path
+            build.local_path = local_path
             build.crash_path = crash_path
             build.is_crm = is_crm
         else:
             build = Build(version=version, project=project, name=name, 
-                            meta_path=meta_path, crash_path=crash_path, is_crm=is_crm)
+                            meta_path=meta_path, local_path=local_path, crash_path=crash_path, is_crm=is_crm)
         db.session.add(build)
             
         db.session.commit()

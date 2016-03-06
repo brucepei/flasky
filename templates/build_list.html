@@ -11,6 +11,7 @@
                 <th>Version</th>
                 <th>Name</th>
                 <th>META Path</th>
+                <th>Local Build Path</th>
                 <th>Crash Path</th>
                 <th>Is CRM</th>
             </thead>
@@ -20,6 +21,7 @@
                     <td><a href="{{ url_for('project_tbd') }}?project_name={{ project_name }}&build_version={{ build.version }}">{{ build.version }}</a></td>
                     <td>{{ build.name }}</td>
                     <td><a href="{{ build.meta_path }}">{{ build.meta_path }}</a></td>
+                    <td><a href="{{ build.local_path }}">{{ build.local_path }}</a></td>
                     <td><a href="{{ build.crash_path }}">{{ build.crash_path }}</a></td>
                     <td>{{ build.is_crm }}</td>
                 </tr>
