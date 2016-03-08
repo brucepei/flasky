@@ -167,6 +167,7 @@ class TestDataForm(Form):
     build_verion = StringField('Build version?', validators=[Required()])
     is_crash = StringField('Is Crash?', validators=[])
     tc_result = StringField('Test case result, pass or fail or None?', validators=[])
+    project_name = StringField('Project name?', validators=[])
     ta_name = StringField('Test action name?', validators=[])
     ta_result = StringField('Test action result, pass or fail or None?', validators=[])
     
@@ -362,6 +363,7 @@ def project_td():
         build_version = form.build_verion.data
         tc_name = form.tc_name.data
         test_client = form.test_client.data
+        project_name = form.project_name.data
         ta_name = form.ta_name.data
         tc_result = str2bool(form.tc_result.data)
         ta_result = str2bool(form.ta_result.data)
@@ -371,8 +373,16 @@ def project_td():
 
         build = Build.query.filter_by(version=build_version).first()
         if not build:
-            log.debug("Not exists build {}!".format(build_version))
-            return jsonify(code=-1, result="Not exists build {}!".format(build_version)), 400
+            #for x86 projects which no necessary to create build manually
+            if project_name:
+                project = Project.query.filter_by(name=project_name).first()
+                if not project:
+                    project = Project(name=project_name)
+                build = Build(version=build_version, project=project, name=build_version, 
+                                meta_path='n/a', local_path=None, crash_path='n/a', is_crm=False)
+            else:
+                log.debug("Not exists build {}!".format(build_version))
+                return jsonify(code=-1, result="Not exists build {}!".format(build_version)), 400
             
         host = Host.query.filter_by(name=host_name).first()
         if host:
